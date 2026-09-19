@@ -1,0 +1,17 @@
+# Entorno virtual de Python
+_env/
+.venv/
+venv/
+
+# Cachés de Python
+__pycache__/
+*.pyc
+
+# Imágenes satélite y descargas (demasiado grandes para GitHub)
+*.tif
+*.tiff
+*.crdownload
+Imatges/
+
+# Sistema
+.DS_Store
