@@ -1,6 +1,10 @@
 # CDIO-I,
 Grup de l'assignatura CDIO I format per : Pau Garzon, Alex Tong, Guillem Ribas,Sebastian Simo.
 
+## Tasques
+
+- [Tasca 2 — Descàrrega eficient d'imatges Sentinel-2](Tasca2/README.md)
+
 
 ##
 git config --global user.email "you@example.com"
