@@ -12,7 +12,7 @@ import rasterio  #per llegir i escriure imatges geogràfiques (GeoTIFF)
 from rasterio.mask import mask  #per retallar una imatge amb el polígon
 from rasterio.windows import from_bounds  #per passar coordenades en metres a files/columnes
 import matplotlib.pyplot as plt  #per fer les figures RGB
-
+from ndwi import calculate_ndwi
 
 #__file__ es la ruta del propi tasca2.py , parent es la carpeta major
 #BASE_DIR es desde la carpeta tasca2 --> busca `polygon o config`
@@ -21,6 +21,7 @@ POLYGON_FILE = BASE_DIR / "polygon.geojson"
 CONFIG_FILE = BASE_DIR / "config.json"
 OUTPUT_DIR = BASE_DIR / "imatges"  #aqui es desen els GeoTIFF green i nir
 RGB_DIR = BASE_DIR / "rgb"  #aqui es desen els PNG en color real
+NDWI_DIR = BASE_DIR / "ndwi"
 
 #impressora "bonica" amb sagnat de 4 espais, s'usa amb pp.pprint(...)
 pp = pprint.PrettyPrinter(indent=4)
@@ -160,6 +161,43 @@ def save_rgb(item, marge_m=2000):
 
     return out_path
 
+def save_ndwi(item):
+    NDWI_DIR.mkdir(exist_ok=True)
+    out_path = NDWI_DIR / f"{item.id}_ndwi.png"
+    green_path = OUTPUT_DIR / f"{item.id}_green.tif"
+    nir_path = OUTPUT_DIR / f"{item.id}_nir.tif"
+
+    if not green_path.exists() or not nir_path.exists():
+        download_band(item, "green")
+        download_band(item, "nir")
+
+    with rasterio.open(green_path) as src_g, rasterio.open(nir_path) as src_n:
+        green = src_g.read(1)
+        nir = src_n.read(1)
+        bounds = src_g.bounds
+
+    ndwi = calculate_ndwi(green, nir)
+    gdf = gpd.read_file(POLYGON_FILE)
+    with rasterio.open(green_path) as src:
+        aoi = gdf.to_crs(src.crs)
+
+    extent = (bounds.left, bounds.right, bounds.bottom, bounds.top)
+
+    fig, ax = plt.subplots(figsize = (10, 6))
+    im = ax.imshow(ndwi, cmap="YlGnBu", vmin = -0.5, vmax = 0.5, extent = extent)
+    aoi.boundary.plot(ax = ax, color ="red", linewidth = 1)
+
+    cbar = fig.colorbar(im, ax = ax, fraction = 0.046, pad = 0.04)
+    cbar.set_label("NDWI")
+
+    ax.set_title(f"NDWI | {item.id} | Núvols: {item.properties['eo:cloud_cover']:.1f}")
+    ax.set_xlabel("x (m, UTM 31N)")
+    ax.set_ylabel("y (m, UTM 31N)")
+
+    fig.savefig(out_path, dpi = 150, bbox_inches = "tight")
+    plt.close(fig)
+
+    return out_path
 
 #part del programa que nomes executa si sexecuta tasca2.py, + per posar el argument descollir sentinel o element84
 #esta posat element84 per defecte, sino python tasca.py--catalog copernicus
@@ -219,7 +257,7 @@ if __name__ == "__main__":
         print(f"Període: {months:.1f} mesos -> {total_mb / months:.2f} MB/mes")
         #regla de tres: MB/mes * N
         for n in [1, 6, 12, 24]:
-            print(f"  {n:>2} mesos ≈ {total_mb / months * n:.2f} MB")
+            print(f"  {n:>2} mesos = {total_mb / months * n:.2f} MB")
 
         # Temps i amplada de banda
         print(f"Temps de descàrrega: {t_descarrega:.1f} s ({t_descarrega / len(items):.2f} s per imatge)")
@@ -229,7 +267,7 @@ if __name__ == "__main__":
         #mateixa regla de tres amb el temps, /60 per passar a minuts
         print(f"Temps per mes: {t_descarrega / months / 60:.1f} min")
         for n in [1, 6, 12, 24]:
-            print(f"  {n:>2} mesos ≈ {t_descarrega / months * n / 60:.1f} min")
+            print(f"  {n:>2} mesos = {t_descarrega / months * n / 60:.1f} min")
         print(f"Temps total del programa: {time.perf_counter() - t_programa:.1f} s")
 
     # Visualització RGB: la imatge amb menys núvols i la que en té més, per comprovar el filtre
@@ -240,4 +278,6 @@ if __name__ == "__main__":
     mes_nuvolosa = max(completes, key=lambda it: it.properties["eo:cloud_cover"])
     for item in [mes_neta, mes_nuvolosa]:
         rgb_path = save_rgb(item)
+        ndwi_path = save_ndwi(item)
         print(f"RGB desat: {rgb_path.name}")
+        print(f"NDWI desat: {ndwi_path.name}")
