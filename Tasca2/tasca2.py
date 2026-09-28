@@ -184,13 +184,13 @@ def save_ndwi(item):
     extent = (bounds.left, bounds.right, bounds.bottom, bounds.top)
 
     fig, ax = plt.subplots(figsize = (10, 6))
-    im = ax.imshow(ndwi, cmap="YlGnBu", vmin = -0.5, vmax = 0.5, extent = extent)
+    im = ax.imshow(ndwi, cmap="YlGnBu", vmin = -1, vmax = 1, extent = extent)
     aoi.boundary.plot(ax = ax, color ="red", linewidth = 1)
 
     cbar = fig.colorbar(im, ax = ax, fraction = 0.046, pad = 0.04)
     cbar.set_label("NDWI")
 
-    ax.set_title(f"NDWI | {item.id} | Núvols: {item.properties['eo:cloud_cover']:.1f}")
+    ax.set_title(f"NDWI | {item.id} | Núvols: {item.properties['eo:cloud_cover']:.1f} %")
     ax.set_xlabel("x (m, UTM 31N)")
     ax.set_ylabel("y (m, UTM 31N)")
 
