@@ -187,6 +187,96 @@ Les dues donen el mateix resultat, però numpy és unes 40 vegades més ràpid. 
 |---|---|---|
 | **Dades `uint16`** | Els GeoTIFF guarden enters sense signe; les restes negatives "donen la volta" | Conversió a `float64` abans d'operar |
 | **Divisió 0/0** | Píxels sense dades (`nodata = 0`). En 47 de les 95 imatges, part del polígon queda fora de la franja del satèl·lit | `np.divide(..., where=denominador > 0)`: el resultat queda **NaN**, que vol dir "sense dada", i no un número inventat |
-| **Reflectàncies negatives** | Reflectància = valor × 0,0001 - 0,1. En aigües molt fosques pot sortir < 0 per soroll, i el NDWI sortiria fora de [-1, 1] | Es posen a 0 amb `np.maximum` |
+| **Reflectàncies negatives** | Amb les imatges d'Element84 no passa: tot i que les metadades indiquen `offset: -0.1`, els valors ja el porten tret (al mar, nir ≈ 54, que amb l'offset donaria una reflectància negativa impossible) i la reflectància és valor × 0,0001. Però si la funció rep valors negatius (una altra font de dades, soroll), el NDWI sortiria fora de [-1, 1] | Es posen a 0 amb `np.maximum` |
 | **Formes diferents** | Si green i nir no són la mateixa imatge, numpy pot combinar-les igualment (*broadcasting*) | Es llança `ValueError` |
 | **Núvols** | Un píxel de núvol no és ni aigua ni terra i dona un NDWI enganyós | Filtre `eo:cloud_cover < 10` de la part 2 |
+
+### Visualize the NDWI index, choose an appropriate color coding. Can open water be detected at plain sight?
+
+![NDWI imatge neta](ndwi/S2C_31TDF_20250630_0_L2A_ndwi.png)
+
+![NDWI imatge ennuvolada](ndwi/S2B_31TDF_20250225_0_L2A_ndwi.png)
+
+**Codificació de colors.** S'usa l'escala `YlGnBu` (groc → verd → blau), fixada entre -1 i 1 (`vmin=-1, vmax=1`) perquè totes les imatges siguin comparables. Els valors alts (aigua) surten en blau fosc, que és el color que s'associa intuïtivament a l'aigua. Una escala divergent com `RdBu`, centrada en 0, també seria adequada, perquè el NDWI té un punt neutre a 0 que separa l'aigua (> 0) de la terra (< 0).
+
+**Sí, l'aigua es detecta a simple vista.** A la imatge neta (30-06-2025) la franja es divideix clarament en dues parts:
+
+| Zona | green | nir | NDWI |
+|---|---|---|---|
+| Mar (part de baix) | ~766 | ~54 | ~0,87 |
+| Sorra (part de dalt) | ~2758 | ~3348 | ~-0,10 |
+
+L'aigua absorbeix gairebé tot l'infraroig i dona un NDWI molt alt. La sorra reflecteix una mica més d'infraroig que de verd i queda lleugerament negativa. La frontera entre els dos colors és la línia de costa.
+
+A la imatge ennuvolada (25-02-2025) tota la franja surt d'un color uniforme a prop de 0: els núvols reflecteixen el verd i l'infraroig gairebé igual, així que no se'n pot treure res. És una altra confirmació que el filtre de núvols de la part 2 és necessari.
+
+### Store the result as a GeoTIFF file. Store other variables, if needed, as pickle files
+
+**GeoTIFF.** Per a cadascuna de les 24 imatges filtrades es desa `ndwi/<id>_ndwi.tif`. Es copia la fitxa tècnica (*profile*) de la banda green, perquè el NDWI tingui exactament la mateixa mida, CRS (EPSG:32631) i posició al mapa, i es canvien dues coses:
+
+- **`float32`** en lloc de `uint16`: el NDWI té decimals entre -1 i 1. `float32` ocupa la meitat que `float64` i té precisió de sobra per a aquest rang.
+- **`nodata = NaN`** en lloc de 0: un NDWI de 0 és un valor vàlid (ni aigua ni terra), així que no pot voler dir "sense dades".
+
+Cada fitxer ocupa ~36 KB (476 × 19 píxels × 4 bytes), 857 KB en total.
+
+**Pickle.** El GeoTIFF només pot guardar matrius de números. La resta d'informació de cada imatge, que s'ha de poder recuperar sense tornar a consultar el catàleg, es desa a `ndwi/resum_ndwi.pkl`: una llista de diccionaris de Python, un per imatge.
+
+| Camp | Contingut |
+|---|---|
+| `id` | Identificador de la imatge |
+| `data` | Data i hora de captura (`datetime`) |
+| `satel·lit` | sentinel-2a / 2b / 2c |
+| `nuvols_%` | `eo:cloud_cover` del tile |
+| `fitxer_ndwi` | Nom del GeoTIFF corresponent |
+| `pixels_valids_%` | % de píxels del retall amb dades |
+| `aigua_%` | % de píxels vàlids amb NDWI > 0 |
+
+Es recupera amb:
+
+```python
+import pickle
+with open("Tasca2/ndwi/resum_ndwi.pkl", "rb") as f:
+    resum = pickle.load(f)
+```
+
+El resum permet veure ràpidament la qualitat de cada imatge. Per exemple, `pixels_valids_%` és com a màxim 61,2 %, perquè el retall és el rectangle que envolta el polígon inclinat i la resta queda fora. Les imatges que no arriben a aquest valor són les de l'òrbita que només cobreix el polígon en part.
+
+## 4. Arquitectura i paral·lelisme
+
+### Write down a proposed architecture flowchart for the program that retrieves N images via STAC, filters the cloudy ones and computes NDWI for all
+
+```mermaid
+flowchart TD
+    CFG[/"config.json<br/>dates + MAX_CLOUD_COVER"/] --> CERCA
+    POL[/"polygon.geojson<br/>AOI"/] --> CERCA
+
+    CERCA["Cerca STAC (Element84)<br/>sentinel-2-l2a · intersects AOI · dates<br/>query: eo:cloud_cover &lt; 10"]
+    CERCA --> ITEMS["Llista de N items<br/>(els ennuvolats ja no hi són)"]
+
+    ITEMS --> DESC
+    subgraph DESC ["Descàrrega · multi-threading (4 fils)"]
+        direction TB
+        EXIST{"El GeoTIFF<br/>ja existeix?"}
+        EXIST -- sí --> SALTA["No es torna a baixar"]
+        EXIST -- no --> COG["Llegir del COG només els blocs<br/>que toquen l'AOI (green i nir)"]
+    end
+    DESC --> BANDES[("imatges/<br/>&lt;id&gt;_green.tif · &lt;id&gt;_nir.tif")]
+
+    BANDES --> CALC
+    subgraph CALC ["Càlcul NDWI · multi-processing (4 processos)"]
+        direction TB
+        NDWI["calculate_ndwi(green, nir)<br/>float64 · negatius a 0 · 0/0 → NaN"]
+    end
+    CALC --> TIF[("ndwi/&lt;id&gt;_ndwi.tif<br/>float32, nodata NaN")]
+    CALC --> PKL[("ndwi/resum_ndwi.pkl<br/>metadades + % aigua")]
+
+    TIF --> VIS["Visualització<br/>RGB i NDWI (PNG)"]
+```
+
+El programa té tres etapes, cadascuna amb el tipus de paral·lelisme que li correspon:
+
+1. **Cerca i filtre de núvols.** Una sola petició al catàleg STAC. El filtre de núvols es fa al servidor, així que les imatges ennuvolades mai arriben a la llista i no es descarreguen.
+2. **Descàrrega (fils).** És una tasca d'**entrada/sortida**: el programa passa gairebé tot el temps esperant respostes del servidor (a la 1c, ~8 s de CPU en 15 min). Mentre un fil espera, els altres poden fer les seves peticions. Els fils comparteixen memòria i són lleugers de crear.
+3. **Càlcul del NDWI (processos).** És una tasca de **càlcul** (CPU). A Python, el GIL només deixa que un fil executi codi Python alhora, així que els fils no ajudarien; cada procés té el seu propi intèrpret i pot fer servir un nucli diferent.
+
+Cada imatge es processa de manera independent (cap imatge necessita el resultat d'una altra), així que totes dues etapes es poden repartir entre fils o processos sense coordinació entre ells.

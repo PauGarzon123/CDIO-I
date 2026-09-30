@@ -52,7 +52,7 @@ def test_entrada_uint16():
 
 
 def test_resultat_entre_menys_u_i_u():
-    #amb reflectàncies negatives (poden sortir en aigües molt fosques per l'offset de -0.1)
+    #amb reflectàncies negatives (no haurien d'existir, però una entrada amb soroll les podria tenir)
     #el resultat podria sortir de [-1, 1], cosa que no té sentit físic
     result = calculate_ndwi(np.array([0.02, 0.05]), np.array([-0.01, 0.40]))
     assert np.all(result >= -1)

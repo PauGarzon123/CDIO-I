@@ -15,7 +15,7 @@ def calculate_ndwi(green, nir):
     if green.shape != nir.shape:
         raise ValueError(f"green {green.shape} i nir {nir.shape} han de tenir la mateixa forma")
 
-    #2) les reflectàncies negatives (soroll en aigües fosques per l'offset de -0.1) les posem a 0
+    #2) les reflectàncies negatives no tenen sentit físic (només poden venir de soroll), les posem a 0
     #np.maximum compara element a element i es queda el més gran
     green = np.maximum(green, 0)
     nir = np.maximum(nir, 0)

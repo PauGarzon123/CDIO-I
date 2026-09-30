@@ -12,7 +12,10 @@ import rasterio  #per llegir i escriure imatges geogràfiques (GeoTIFF)
 from rasterio.mask import mask  #per retallar una imatge amb el polígon
 from rasterio.windows import from_bounds  #per passar coordenades en metres a files/columnes
 import matplotlib.pyplot as plt  #per fer les figures RGB
-from ndwi import calculate_ndwi
+from ndwi import calculate_ndwi  #la nostra funció del NDWI (ndwi.py)
+import pickle  #per desar variables de Python a un fitxer i recuperar-les després
+import numpy as np  #per operar amb matrius (comptar píxels d'aigua)
+from concurrent.futures import ThreadPoolExecutor  #per repartir feines entre diversos fils
 
 #__file__ es la ruta del propi tasca2.py , parent es la carpeta major
 #BASE_DIR es desde la carpeta tasca2 --> busca `polygon o config`
@@ -86,13 +89,14 @@ def search_catalog(catalog, max_cloud=None):
     return items, platform_counter
 
 
-def download_band(item, band):
+def download_band(item, band, out_dir=OUTPUT_DIR):
     """Descarrega només el tros de la banda que cau dins del polígon i el desa com a GeoTIFF."""
     #URL del fitxer de la banda (ex: .../B03.tif per green)
     href = item.assets[band].href
-    OUTPUT_DIR.mkdir(exist_ok=True) #Crea carpeta de imatges i si ja existeix no dona error
+    #out_dir per defecte és imatges/, el benchmark en fa servir una altra de temporal
+    out_dir.mkdir(parents=True, exist_ok=True) #Crea carpeta de imatges i si ja existeix no dona error
     #nom del fitxer de sortida: id de la imatge + banda
-    out_path = OUTPUT_DIR / f"{item.id}_{band}.tif"
+    out_path = out_dir / f"{item.id}_{band}.tif"
 
     # Si ja el tenim d'una execució anterior, no el tornem a baixar
     if out_path.exists():
@@ -125,6 +129,29 @@ def download_band(item, band):
         dst.write(data)
 
     return out_path
+
+
+def download_all(items, n_fils=4, out_dir=OUTPUT_DIR):
+    """Descarrega green i nir de totes les imatges repartint les descàrregues entre n_fils fils.
+    Retorna la llista de rutes dels fitxers."""
+    #llista de totes les feines a fer: una per cada (imatge, banda)
+    feines = [(item, band) for item in items for band in ["green", "nir"]]
+
+    #funció que fa UNA feina; és la que executarà cada fil
+    def fes_feina(feina):
+        item, band = feina
+        return download_band(item, band, out_dir)
+
+    #ThreadPoolExecutor crea n_fils fils i els va donant feines a mesura que acaben l'anterior
+    #el with espera que acabin totes abans de continuar (com el join() dels threads)
+    with ThreadPoolExecutor(max_workers=n_fils) as executor:
+        #executor.map fa fes_feina(feina) per cada feina, repartint-les entre els fils
+        #i retorna els resultats en el mateix ordre que les feines
+        resultats = executor.map(fes_feina, feines)
+        #tqdm per veure el progrés, list() per esperar tots els resultats
+        paths = list(tqdm(resultats, total=len(feines), desc=f"Descarregant ({n_fils} fils)"))
+
+    return paths
 
 
 def save_rgb(item, marge_m=2000):
@@ -199,6 +226,33 @@ def save_ndwi(item):
 
     return out_path
 
+def save_ndwi_tif(item):
+    """Calcula el NDWI d'una imatge i el desa com a GeoTIFF, amb la mateixa posició al mapa que les bandes."""
+    NDWI_DIR.mkdir(exist_ok=True)
+    out_path = NDWI_DIR / f"{item.id}_ndwi.tif"
+    #download_band ja retorna la ruta, i si el fitxer ja hi és no el torna a baixar
+    green_path = download_band(item, "green")
+    nir_path = download_band(item, "nir")
+
+    #llegim les dues bandes i ens guardem el profile (la fitxa tècnica) de green
+    with rasterio.open(green_path) as src_g, rasterio.open(nir_path) as src_n:
+        green = src_g.read(1)
+        nir = src_n.read(1)
+        profile = src_g.profile
+
+    ndwi = calculate_ndwi(green, nir)
+
+    #mateixa fitxa que green (mida, crs, transform) però canviant el que és diferent:
+    #float32 perquè el NDWI té decimals (entre -1 i 1), i nodata NaN en lloc de 0
+    #(0 és un NDWI vàlid, no pot voler dir "sense dades")
+    profile.update(dtype="float32", nodata=np.nan, count=1)
+
+    with rasterio.open(out_path, "w", **profile) as dst:
+        #float64 -> float32: ocupa la meitat i la precisió sobra per a valors entre -1 i 1
+        dst.write(ndwi.astype("float32"), 1)
+
+    return out_path, ndwi
+
 #part del programa que nomes executa si sexecuta tasca2.py, + per posar el argument descollir sentinel o element84
 #esta posat element84 per defecte, sino python tasca.py--catalog copernicus
 if __name__ == "__main__":
@@ -234,12 +288,10 @@ if __name__ == "__main__":
         # Bytes rebuts per la targeta de xarxa i hora abans de començar
         net_inici = psutil.net_io_counters().bytes_recv
         t_inici = time.perf_counter()
-        #dos bucles: per cada imatge, per cada banda
-        for item in tqdm(items, desc="Descarregant"):
-            for band in ["green", "nir"]:
-                path = download_band(item, band)
-                #sumem el que ocupa el fitxer al disc
-                total_bytes += path.stat().st_size
+        #descarreguem green i nir de totes les imatges amb 4 fils alhora
+        for path in download_all(items, n_fils=4):
+            #sumem el que ocupa el fitxer al disc
+            total_bytes += path.stat().st_size
         #temps de descàrrega = ara - inici
         t_descarrega = time.perf_counter() - t_inici
         #MB que han entrat per la xarxa durant la descàrrega
@@ -269,6 +321,30 @@ if __name__ == "__main__":
         for n in [1, 6, 12, 24]:
             print(f"  {n:>2} mesos = {t_descarrega / months * n / 60:.1f} min")
         print(f"Temps total del programa: {time.perf_counter() - t_programa:.1f} s")
+
+    # 3.5) NDWI de totes les imatges filtrades: GeoTIFF per a cada una + resum en pickle
+    resum = []  #llista on anirem afegint un diccionari per imatge
+    for item in tqdm(items, desc="NDWI"):
+        ndwi_path, ndwi = save_ndwi_tif(item)
+        #np.isnan marca els píxels sense dades, ~ els inverteix (True = píxel vàlid)
+        valids = ~np.isnan(ndwi)
+        resum.append({
+            "id": item.id,
+            "data": item.datetime,
+            "satel·lit": item.properties["platform"],
+            "nuvols_%": item.properties["eo:cloud_cover"],
+            "fitxer_ndwi": ndwi_path.name,
+            #% de píxels amb dades dins del retall
+            "pixels_valids_%": valids.mean() * 100,
+            #% de píxels vàlids amb NDWI > 0 (aigua)
+            "aigua_%": (ndwi[valids] > 0).mean() * 100 if valids.any() else np.nan,
+        })
+
+    #"wb" = write binary: pickle desa bytes, no text
+    resum_path = NDWI_DIR / "resum_ndwi.pkl"
+    with open(resum_path, "wb") as f:
+        pickle.dump(resum, f)
+    print(f"NDWI desats: {len(resum)} GeoTIFF + {resum_path.name}")
 
     # Visualització RGB: la imatge amb menys núvols i la que en té més, per comprovar el filtre
     #només mirem imatges on el tile té dades gairebé sencer (algunes passades només en cobreixen un 7%)
