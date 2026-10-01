@@ -1,18 +1,29 @@
 import glob
 import rasterio
-import matplotlib.pyplot as plt
+import numpy as np
 
 archivos = glob.glob("../Tasca2/ndwi/*.tif")
 
-print("Imágenes encontradas:", len(archivos))
-print(archivos[0])
+matrices_binarias = []
 
-for n in range(0,24):
-    with rasterio.open(archivos[n]) as src:
+for archivo in archivos:
+    with rasterio.open(archivo) as src:
         ndwi = src.read(1)
 
-plt.figure(figsize=(10, 8))
-plt.imshow(ndwi, cmap="RdYlBu")
-plt.colorbar(label="NDWI")
-plt.title("NDWI")
-plt.show()
+    # Negativos = 0, positivos = 1
+    matriz_binaria = (ndwi > 0).astype(np.uint8)
+
+    matrices_binarias.append(matriz_binaria)
+
+    print(f"\n--- {archivo} ---")
+    print(matriz_binaria)
+
+import matplotlib.pyplot as plt
+
+for i, matriz in enumerate(matrices_binarias):
+
+    plt.figure(figsize=(8, 6))
+    plt.imshow(matriz, cmap="gray")
+    plt.colorbar(label="0 = negativo / 1 = positivo")
+    plt.title(f"NDWI binario - TIFF {i}")
+    plt.show()
