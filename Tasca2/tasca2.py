@@ -266,6 +266,8 @@ def ndwi_all(items, n_processos=4):
         resultats = executor.map(save_ndwi_tif, items)
         resultats = list(tqdm(resultats, total=len(items), desc=f"NDWI ({n_processos} processos)"))
 
+    #3) matriu del resultat plena de NaN, i només dividim on el denominador no és 0
+    #els píxels amb 0/0 (sense dades) es queden com a NaN, sense avisos
     return resultats
 
 
