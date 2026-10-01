@@ -9,10 +9,13 @@ import tasca2  #reutilitzem les funcions del programa principal
 #cada execució fa UNA sola mesura: així no hi ha res a la memòria cau d'una mesura anterior
 #ús: python Tasca2/benchmark.py descarrega --fils 1
 #    python Tasca2/benchmark.py descarrega --fils 4
+#    python Tasca2/benchmark.py ndwi --procs 1
+#    python Tasca2/benchmark.py ndwi --procs 4
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Comparació de temps amb diferents fils")
-    parser.add_argument("prova", choices=["descarrega"])
-    parser.add_argument("--fils", type=int, default=1)
+    parser.add_argument("prova", choices=["descarrega", "ndwi"])
+    parser.add_argument("--fils", type=int, default=1)  #per a la prova descarrega
+    parser.add_argument("--procs", type=int, default=1)  #per a la prova ndwi
     args = parser.parse_args()
 
     with open(tasca2.CONFIG_FILE) as f:
@@ -35,5 +38,17 @@ if __name__ == "__main__":
               f"({temps / len(paths):.2f} s per fitxer) | Xarxa: {net_mb:.1f} MB "
               f"| Amplada de banda: {net_mb * 8 / temps:.2f} Mbit/s")
 
-        #esborrem la carpeta temporal: només volíem mesurar el temps
+        #esborrem la carpeta temporal
         shutil.rmtree(carpeta)
+
+    if args.prova == "ndwi":
+        #abans del cronòmetre ens assegurem que les bandes ja són a imatges/
+        #així només mesurem el càlcul del NDWI, no la descàrrega
+        tasca2.download_all(items)
+
+        t_inici = time.perf_counter()
+        resultats = tasca2.ndwi_all(items, n_processos=args.procs)
+        temps = time.perf_counter() - t_inici
+
+        print(f"Processos: {args.procs} | Imatges: {len(resultats)} | Temps: {temps:.2f} s "
+              f"({temps / len(resultats) * 1000:.0f} ms per imatge)")

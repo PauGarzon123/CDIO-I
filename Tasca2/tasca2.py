@@ -16,6 +16,7 @@ from ndwi import calculate_ndwi  #la nostra funció del NDWI (ndwi.py)
 import pickle  #per desar variables de Python a un fitxer i recuperar-les després
 import numpy as np  #per operar amb matrius (comptar píxels d'aigua)
 from concurrent.futures import ThreadPoolExecutor  #per repartir feines entre diversos fils
+from concurrent.futures import ProcessPoolExecutor  #per repartir feines entre diversos processos (nuclis)
 
 #__file__ es la ruta del propi tasca2.py , parent es la carpeta major
 #BASE_DIR es desde la carpeta tasca2 --> busca `polygon o config`
@@ -253,6 +254,21 @@ def save_ndwi_tif(item):
 
     return out_path, ndwi
 
+
+def ndwi_all(items, n_processos=4):
+    """Calcula i desa el NDWI de totes les imatges repartint-les entre n_processos processos.
+    Retorna una llista de (ruta del GeoTIFF, matriu NDWI), una per imatge."""
+    #ProcessPoolExecutor crea n_processos processos, cadascun amb el seu propi Python
+    #a diferència dels fils, no comparteixen memoria: cada item s'envia al procés empaquetat amb pickle
+    #per això la funció que repartim (save_ndwi_tif) ha d'estar definida a dalt de tot del fitxer
+    with ProcessPoolExecutor(max_workers=n_processos) as executor:
+        #igual que a download_all: fa save_ndwi_tif(item) per cada item i manté l'ordre
+        resultats = executor.map(save_ndwi_tif, items)
+        resultats = list(tqdm(resultats, total=len(items), desc=f"NDWI ({n_processos} processos)"))
+
+    return resultats
+
+
 #part del programa que nomes executa si sexecuta tasca2.py, + per posar el argument descollir sentinel o element84
 #esta posat element84 per defecte, sino python tasca.py--catalog copernicus
 if __name__ == "__main__":
@@ -324,8 +340,9 @@ if __name__ == "__main__":
 
     # 3.5) NDWI de totes les imatges filtrades: GeoTIFF per a cada una + resum en pickle
     resum = []  #llista on anirem afegint un diccionari per imatge
-    for item in tqdm(items, desc="NDWI"):
-        ndwi_path, ndwi = save_ndwi_tif(item)
+    #calculem tots els NDWI repartits entre 4 processos
+    #zip ajunta cada item amb el seu resultat (ndwi_all els retorna en el mateix ordre)
+    for item, (ndwi_path, ndwi) in zip(items, ndwi_all(items, n_processos=4)):
         #np.isnan marca els píxels sense dades, ~ els inverteix (True = píxel vàlid)
         valids = ~np.isnan(ndwi)
         resum.append({
