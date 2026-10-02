@@ -9,6 +9,7 @@ __pycache__/
 
 # Imágenes satélite y descargas (demasiado grandes para GitHub)
 *.pkl
+*.csv
 *.tif
 *.tiff
 *.crdownload
