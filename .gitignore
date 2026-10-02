@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 
 # Imágenes satélite y descargas (demasiado grandes para GitHub)
+*.pkl
 *.tif
 *.tiff
 *.crdownload
