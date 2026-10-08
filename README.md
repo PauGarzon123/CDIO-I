@@ -24,4 +24,4 @@ python coastline_estimator/extract_shorelines.py -p /home/cbltic/Documents/CDIO-
 cd bdse-cdio1/coastline_estimator
 python coastline_estimator/calculate_erosion.py -p /home/cbltic/Documents/CDIO-I/Tasca3
 python coastline_estimator/analyze.py -p /home/cbltic/Documents/CDIO-I/Tasca3
-
+python error_estimator.py -p /home/cbltic/Documents/CDIO-I/Tasca3 -g /home/cbltic/Documents/CDIO-I/Tasca3/input-groundtruth -d 2017-06-30
