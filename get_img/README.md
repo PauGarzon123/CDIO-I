@@ -235,7 +235,7 @@ Es recupera amb:
 
 ```python
 import pickle
-with open("Tasca2/ndwi/resum_ndwi.pkl", "rb") as f:
+with open("calc_ndwi/output/resum_ndwi.pkl", "rb") as f:
     resum = pickle.load(f)
 ```
 

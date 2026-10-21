@@ -3,7 +3,7 @@ import os
 import rasterio
 import numpy as np
 
-archivos = glob.glob("../Tasca2/ndwi/*.tif")
+archivos = glob.glob("../calc_ndwi/output/*.tif")
 
 matrices_binarias = []
 
@@ -24,7 +24,7 @@ for archivo in archivos:
     nombre_salida = os.path.splitext(nombre)[0] + "_binary.tif"
 
     # Directorio de salida
-    directorio_salida = "../Tasca3/ndwi_binary"
+    directorio_salida = "../bin_mask/ndwi_binary"
     os.makedirs(directorio_salida, exist_ok=True)
 
     ruta_salida = os.path.join(directorio_salida, nombre_salida)

@@ -25,7 +25,7 @@ POLYGON_FILE = BASE_DIR / "polygon.geojson"
 CONFIG_FILE = BASE_DIR / "config.json"
 OUTPUT_DIR = BASE_DIR / "imatges"  #aqui es desen els GeoTIFF green i nir
 RGB_DIR = BASE_DIR / "rgb"  #aqui es desen els PNG en color real
-NDWI_DIR = BASE_DIR / "ndwi"
+NDWI_DIR = BASE_DIR.parent / "calc_ndwi" / "output"
 
 #impressora "bonica" amb sagnat de 4 espais, s'usa amb pp.pprint(...)
 pp = pprint.PrettyPrinter(indent=4)

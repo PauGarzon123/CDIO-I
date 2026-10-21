@@ -1,7 +1,7 @@
 import glob
 import rasterio
 
-archivos = glob.glob("../Tasca2/ndwi/*.tif")
+archivos = glob.glob("../calc_ndwi/output/*.tif")
 
 print("Imágenes encontradas:", len(archivos))
 
