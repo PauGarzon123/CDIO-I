@@ -92,6 +92,9 @@ print("\nTransects before filtering:", region.shape[1])
 print("Transects retained:", clean.shape[1])
 print("Transects removed:", region.shape[1] - clean.shape[1])
 
+# guardem els transectes vàlids per netejar igual les dades de 2025 (models_prediccio.py)
+pd.Series(clean.columns, name="transect_id").to_csv("selected_transects.csv", index=False)
+
 if clean.shape[1] == 0:
     raise ValueError(
         "No transects remain. Increase MAX_MISSING_PCT or inspect the data."

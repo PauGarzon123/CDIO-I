@@ -43,6 +43,7 @@ joblib>=1.6.0,<2.0.0
 jplephem>=2.24,<3.0.0
 jsonschema>=4.26.0,<5.0.0
 jsonschema-specifications>=2025.9.1,<2026.0.0
+jax>=0.12.0,<1.0.0
 keras>=3.15.1,<4.0.0
 kiwisolver>=1.5.1,<2.0.0
 lazy-loader>=0.6,<1.0.0
